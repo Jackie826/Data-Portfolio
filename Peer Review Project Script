@@ -1,81 +1,41 @@
---Peer Review Dashboard
+Peer Review Dashboard – Randomized Encounter Selection Overview
 
---> Logic: The script refreshes the random pull each time it's run to randomize the result order.
---> Details: Pulling 8 distinct patients per provider, per quarter — Randomly selected (not just the first 8)
+This SQL script powers the Peer Review Dashboard by selecting randomized encounters per provider on a quarterly basis. It is designed to streamline peer review processes and support automation by pulling 8 distinct, 
+randomly selected patient encounters per provider per quarter, excluding non-billable or incomplete visits.
 
---> ADDED
---1) It needs to randomize selection of 8 scheduled visits each quarter for all providers: BH, MH, Specialties, nutrition, primary care.
---2) Omit case management - they have no provider id so will not be included
---3) Vaccine visits. added a vaccine field to highlight the service 
---4) Will be looking at previous quarter each time and not more than a years worth of data - Added TY then sectioned by quarter date 
---5) Looking to automate the selection process so sharon can pull and send - the dash will choose the randoms for her. 
---6) Data to include person number, full name, dob, dos, time, billable y/n, visit type, name of provider, name of location - added 
---7) Only load completed visits - added encounters and billed Yes to help filter out non encounters. 
+Key Logic
+Randomization: Each run of the script refreshes the patient list using NEWID() to generate a new randomized order of eligible visits.
+Quarterly Grouping: Encounters are grouped by year and quarter for time-based segmentation.
+Data Scope: The script only includes data from the previous 12 months, filtering by encounter timestamp.
+
+Visit Criteria: 
+Only completed and billable visits are included (billable_ind = 'Y').
+Non-encounters are excluded using timestamp and billing indicators.
+Only encounters with a valid provider (provider_id present) are included.
+
+Enhancements & Features:
+Random Sampling: Selects 8 visits per provider, per quarter across various service lines: Behavioral Health (BH), Mental Health (MH), Nutrition, and Primary Care
+
+Vaccination Indicator: 
+A Vaccine field flags visits related to vaccinations by checking diagnosis descriptions.
+
+Rolling Time Frame:
+Looks at encounters in the past year, segmented by quarter.
+
+Automation Ready:
+Built to support automated workflows (e.g. QI can pull/send lists directly to the providers).
+
+Expanded Data Fields:
+Output includes patient and visit details: Patient number, full name, DOB, encounter date/time, Billable status, visit type, specialty, provider name, location name
+
+Data Integrity:
+Only completed encounters are included, based on encounter ID and billing status.
+
+Exclusions:
+Case Management visits are excluded (no associated provider ID).
+
+The script:
 
 
-SELECT * 
-FROM (
-    SELECT        
-		p.person_nbr AS [Patient Number],
-        pm.last_name AS [Provider Last Name],
 
-        -- Quarterly date view 
-        DATEPART(YEAR, pe.enc_timestamp) AS [Encounter Year],
-        DATEPART(QUARTER, pe.enc_timestamp) AS [Encounter Quarter],
-        CONCAT('Q', DATEPART(QUARTER, pe.enc_timestamp), ' ', DATEPART(YEAR, pe.enc_timestamp)) AS [Quarterly Date],
-		
-		-- Earliest visit in the quarter
-        MIN(CAST(pe.enc_timestamp AS date)) AS [Encounter Date], 
-        FORMAT(MIN(pe.enc_timestamp), 'h:mm tt') AS [Encounter Time],
-        
-		--To help choose a value for the grouped fields. 
-		MAX(pe.billable_ind) AS [Billed?],
-	    MAX(sm.description) AS [Provider Specialty],
-		MAX(m.specialty) AS [Visit Specialty],
-		MAX(m.Visit_type) AS [Visit Type],	    
-        MAX(dx.[Vaccine]) AS [Vaccine],
 
-        --Partitioned quarterly date 
-        ROW_NUMBER() OVER (PARTITION BY pm.provider_id, DATEPART(YEAR, pe.enc_timestamp), DATEPART(QUARTER, pe.enc_timestamp)
-            ORDER BY NEWID()) AS [Random Pt]
-
-    FROM Patient_encounter pe
-    LEFT JOIN Person p ON pe.person_id = p.person_id
-    LEFT JOIN Location_mstr lm ON pe.location_id = lm.location_id
-    LEFT JOIN Provider_mstr pm ON pe.rendering_provider_id = pm.provider_id
-    LEFT JOIN provider_practice_mstr ppm ON pe.rendering_provider_id = ppm.provider_id
-    LEFT JOIN specialty_mstr sm ON ppm.specialty_code = sm.specialty_code
-	Left Join master_im_ m ON pe.enc_id = m.enc_id
-	
-    -- Vaccine subquery
-    LEFT JOIN (
-        SELECT pd.person_id, pd.description AS [Vaccine]
-        FROM patient_diagnosis pd
-        WHERE pd.description LIKE '%vaccine%'
-    ) AS DX ON pe.person_id = dx.person_id  
-
-    -- TY lookback
-    WHERE pe.enc_timestamp >= DATEADD(YEAR, -1, GETDATE())
-	AND CAST(pe.enc_timestamp AS time) <> '00:00:00'
-    AND pe.location_id IN (
-        '9D971E61-2B5A-4504-9016-7FD863790EE2', 
-        'A97BF74E-A822-468E-871E-197FD3C21314', 
-        'E6764687-D771-4420-9D04-92370E8BA245', 
-        'D8CC9783-E862-49A2-A82F-8983BAEA23FC', 
-        '58D75176-5578-4DCF-BDBE-AFFDCEB0D77E', 
-        '00D2BE2A-7960-44CA-A7EF-24AFC233A761'
-    )
-    AND pe.billable_ind = 'Y'
-    AND pm.first_name IS NOT NULL AND pm.last_name IS NOT NULL
-
-	--To collapse multiple visits into a single row per patient per quarter.
-    GROUP BY 
-        p.person_id, p.person_nbr, p.first_name, p.last_name, p.date_of_birth,
-        lm.location_name, pm.first_name, pm.last_name, pm.provider_id,        
-		DATEPART(YEAR, pe.enc_timestamp), DATEPART(QUARTER, pe.enc_timestamp)
-) AS Enclist
-
--- Random filtered the patients after assigning row number
-WHERE [Random Pt] <= 8
-
-ORDER BY [Provider Last Name], [Quarterly Date], [Random Pt];
