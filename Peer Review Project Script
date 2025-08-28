@@ -34,7 +34,90 @@ Only completed encounters are included, based on encounter ID and billing status
 Exclusions:
 Case Management visits are excluded (no associated provider ID).
 
-The script:
+======================================================
+Peer Review Dashboard: Randomized Encounter Selection
+Description:
+Selects 8 random, billable, completed patient visits 
+per provider per quarter from the past 12 months.
+======================================================
+
+SELECT * 
+FROM (
+    SELECT        
+        -- Patient and Provider Info
+        p.person_nbr AS [Patient Number],
+        pm.last_name AS [Provider Last Name],
+
+        -- Quarterly Grouping
+        DATEPART(YEAR, pe.enc_timestamp) AS [Encounter Year],
+        DATEPART(QUARTER, pe.enc_timestamp) AS [Encounter Quarter],
+        CONCAT('Q', DATEPART(QUARTER, pe.enc_timestamp), ' ', DATEPART(YEAR, pe.enc_timestamp)) AS [Quarterly Date],
+
+        -- Encounter Details
+        MIN(CAST(pe.enc_timestamp AS date)) AS [Encounter Date],
+        FORMAT(MIN(pe.enc_timestamp), 'h:mm tt') AS [Encounter Time],
+
+        -- Visit & Provider Metadata
+        MAX(pe.billable_ind) AS [Billed?],
+        MAX(sm.description) AS [Provider Specialty],
+        MAX(m.specialty) AS [Visit Specialty],
+        MAX(m.Visit_type) AS [Visit Type],
+        MAX(dx.[Vaccine]) AS [Vaccine],
+
+        -- Random Row Number within Provider + Quarter
+        ROW_NUMBER() OVER (
+            PARTITION BY pm.provider_id, 
+                         DATEPART(YEAR, pe.enc_timestamp), 
+                         DATEPART(QUARTER, pe.enc_timestamp)
+            ORDER BY NEWID()
+        ) AS [Random Pt]
+
+    FROM Patient_encounter pe
+
+    -- Joins
+    LEFT JOIN Person p ON pe.person_id = p.person_id
+    LEFT JOIN Location_mstr lm ON pe.location_id = lm.location_id
+    LEFT JOIN Provider_mstr pm ON pe.rendering_provider_id = pm.provider_id
+    LEFT JOIN provider_practice_mstr ppm ON pe.rendering_provider_id = ppm.provider_id
+    LEFT JOIN specialty_mstr sm ON ppm.specialty_code = sm.specialty_code
+    LEFT JOIN master_im_ m ON pe.enc_id = m.enc_id
+
+    -- Join Vaccine Diagnosis (Subquery)
+    LEFT JOIN (
+        SELECT 
+            pd.person_id, 
+            pd.description AS [Vaccine]
+        FROM patient_diagnosis pd
+        WHERE pd.description LIKE '%vaccine%'
+    ) AS dx ON pe.person_id = dx.person_id
+
+    -- Filters
+    WHERE pe.enc_timestamp >= DATEADD(YEAR, -1, GETDATE())                --> Past year only
+      AND CAST(pe.enc_timestamp AS time) <> '00:00:00'                    --> Exclude zero-time encounters
+      AND pe.billable_ind = 'Y'                                           --> Only billable visits
+      AND pm.first_name IS NOT NULL AND pm.last_name IS NOT NULL          --> Valid provider
+      AND pe.location_id IN (                                             --> Approved locations
+            '9D971E61-2B5A-4504-9016-7FD863790EE2', 
+            'A97BF74E-A822-468E-871E-197FD3C21314', 
+            'E6764687-D771-4420-9D04-92370E8BA245', 
+            'D8CC9783-E862-49A2-A82F-8983BAEA23FC', 
+            '58D75176-5578-4DCF-BDBE-AFFDCEB0D77E', 
+            '00D2BE2A-7960-44CA-A7EF-24AFC233A761'
+        )
+
+    -- Group by for randomization and aggregation
+    GROUP BY 
+        p.person_id, p.person_nbr, p.first_name, p.last_name, p.date_of_birth,
+        lm.location_name, pm.first_name, pm.last_name, pm.provider_id,        
+        DATEPART(YEAR, pe.enc_timestamp), 
+        DATEPART(QUARTER, pe.enc_timestamp)
+) AS Enclist
+
+-- Final Filter: Only 8 Random Patients Per Provider Per Quarter
+WHERE [Random Pt] <= 8
+
+-- Order Output
+ORDER BY [Provider Last Name], [Quarterly Date], [Random Pt];
 
 
 
