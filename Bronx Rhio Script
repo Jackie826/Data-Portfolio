@@ -1,1 +1,97 @@
+SELECT  
+    -- Compliance logic: Elevate to "Error" if 0-17 logic triggers
+    CASE 
+        WHEN [Error] = 'No' AND [0-17 Guardian Sign Error] = 'Yes' THEN 'Error'
+        ELSE [Compliance Status]
+    END AS [Compliance Status],
 
+    [Error], 
+    CASE WHEN [Rhio Form] = 1 THEN 'Yes' ELSE 'No' END AS [Rhio Form], 
+    CASE WHEN [Rhio Form Date] >= '2024-10-01' THEN [Rhio Form Date] ELSE NULL END AS [RHIO Form Date],  
+    [Rhio Form Selection], 
+    [PM Rhio Status], 
+    [Form Check-in Staff], 
+    [0-17 Guardian Sign Error], 
+    [Form Guardian Name], 
+    [Guardian Role], 
+    [Visit Type], 
+    [Location], 
+    [Last Kept Appt], 
+    [Next Appt], 
+    [Patient Name], 
+    [Person Nbr], 
+    [DOB], 
+    [Age], 
+    [18 Adult Consent Req'd], 
+    CAST('2024-10-01' AS DATE) AS [Baseline Date],  
+    CAST(GETDATE() AS DATE) AS [YTD Date],  
+    DATEDIFF(DAY, CAST('2024-10-01' AS DATE), GETDATE()) AS [Baseline to YTD Total Days]
+
+FROM (
+    -- Begin Main Data Logic
+    SELECT DISTINCT 
+
+        -- [Error] Logic
+        <inserted logic as in your current script>,
+
+        -- [Compliance Status] Logic
+        <inserted logic as in your current script>,
+
+        -- [Next Appt], [Document Generated], [Rhio Form Date], [Rhio Form]
+        <inserted fields as in your current script>,
+
+        -- [Encounter Date], [Location], [Patient Name], etc.
+        <inserted fields as in your current script>,
+
+        -- Age-Based Logic
+        -- 0–17 Guardian Signature Requirement
+        <your logic for [0-17 Guardian Sign Error]>,
+
+        -- Adult Consent Required Logic (Age 18+ in current year)
+        <your logic for [18 Adult Consent Req'd]>,
+
+        -- PM Demographic LCDS RHIO Status
+        <your logic for [PM Rhio Status]>,
+
+        -- Attribution to Check-in Staff
+        <your logic for [Form Check-in Staff]>,
+
+        -- Visit Type, RHIO Form Selection, Last Kept Appt, etc.
+        <all remaining field logic>,
+
+        -- Ranking by most recent in-person kept encounter
+        ROW_NUMBER() OVER (
+            PARTITION BY p.person_id
+            ORDER BY 
+                CASE 
+                    WHEN evt.event NOT IN (<list of virtual events>) 
+                    THEN pe.create_timestamp
+                    ELSE NULL
+                END DESC
+        ) AS RankRow
+
+    FROM patient_encounter pe
+
+    -- Joins and Subqueries
+    <your full list of joins: person, appointments, RHIO form logic, check-in staff attribution, etc.>
+
+    WHERE 
+        CAST(pe.create_timestamp AS DATE) >= '2024-10-01'
+        AND pe.location_id IN (<your location IDs>)
+        AND evt.event NOT IN (<virtual event filters>)
+        AND pe.enc_id IN (SELECT enc_id FROM appointments WHERE appt_kept_ind = 'Y')
+        AND NOT (
+            p.first_name + ' ' + p.last_name LIKE '10 test' 
+            OR p.last_name LIKE 'Test%' 
+            OR p.first_name LIKE 'Test' 
+            OR p.first_name + ' ' + p.last_name LIKE '%closed%' 
+            OR p.first_name + ' ' + p.last_name LIKE '%Sheila%Tes'
+            OR p.first_name + ' ' + p.last_name LIKE '%do not use%'
+        )
+) RankedDoc
+
+-- Final filter: Only show patients with actual staff assigned
+WHERE RankRow = 1
+  AND [Form Check-in Staff] != 'No Check-in Staff'
+
+ORDER BY [Patient Name], [Encounter Date]
