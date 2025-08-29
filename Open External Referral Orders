@@ -1,0 +1,139 @@
+-- Open External Referral Orders
+
+SELECT DISTINCT
+    pm.last_name AS [Provider Last Name],
+    p.last_name AS [Patient Last Name],
+    p.person_nbr AS [Patient Number],
+    CAST(o.txt_ordereddate AS DATE) AS [Ordered Date],
+    CAST(pe.enc_timestamp AS DATE) AS Encounter_Date,
+    o.txt_actTxtDisplay AS [Referral_Type],
+
+    -- Referral Type Mapping
+    CASE 
+        WHEN o.opt_order_type = '1' THEN 'All Orders'
+        WHEN o.opt_order_type = '2' THEN 'Diagnostic' 
+        WHEN o.opt_order_type = '3' THEN 'Lab Orders'
+        WHEN o.opt_order_type = '4' THEN 'Office Services'
+        WHEN o.opt_order_type = '5' THEN 'Procedures'
+        WHEN o.opt_order_type = '6' THEN 'Order' 
+        WHEN o.opt_order_type = '7' THEN 'Other Orders'
+        WHEN o.opt_order_type = '8' THEN 'Immunizations'
+        WHEN o.opt_order_type = '9' THEN 'Medications' 
+        ELSE NULL
+    END AS [Referral type],
+
+    o.txt_step AS [Status],
+
+    -- Referral Status Flags
+    CASE WHEN ordered.txt_order_enc_id IS NOT NULL THEN 'Yes' ELSE 'No' END AS [Ordered],
+    CASE WHEN scheduled.txt_order_enc_id IS NOT NULL THEN 'Yes' ELSE 'No' END AS [Scheduled],
+    CASE WHEN obtained.txt_order_enc_id IS NOT NULL THEN 'Yes' ELSE 'No' END AS [Obtained],
+    CASE WHEN received.txt_order_enc_id IS NOT NULL THEN 'Yes' ELSE 'No' END AS [Received],
+    CASE WHEN completed.txt_order_enc_id IS NOT NULL THEN 'Yes' ELSE 'No' END AS [Completed],
+
+    -- Final Status Logic
+    CASE 
+        WHEN o.txt_step LIKE 'Completed' THEN 'Yes'
+        WHEN (o.txt_step LIKE 'result received' OR o.txt_step LIKE 'obtained') 
+             AND completed.txt_order_enc_id IS NULL THEN 'Yes'
+        WHEN o.txt_step LIKE 'scheduled' 
+             AND completed.txt_order_enc_id IS NULL 
+             AND obtained.txt_order_enc_id IS NULL 
+             AND received.txt_order_enc_id IS NULL THEN 'Yes'
+        WHEN o.txt_step LIKE 'ordered' 
+             AND scheduled.txt_order_enc_id IS NULL 
+             AND completed.txt_order_enc_id IS NULL 
+             AND obtained.txt_order_enc_id IS NULL 
+             AND received.txt_order_enc_id IS NULL THEN 'Yes'
+        ELSE 'No'
+    END AS Final_Status,
+
+    CAST(o.txt_appt_date AS DATE) AS [Referred_Appt_Date],
+    o.txt_appt_location AS [Referred_Location],
+    o.txt_order_enc_id
+
+FROM order_management_ o
+LEFT JOIN person p ON o.person_id = p.person_id 
+LEFT JOIN patient_encounter pe ON o.enc_id = pe.enc_id
+LEFT JOIN location_mstr lm ON pe.location_id = lm.location_id
+LEFT JOIN provider_mstr pm ON pm.provider_id = pe.rendering_provider_id
+
+-- Join for Status Tiers
+-- Ordered
+LEFT JOIN (
+    SELECT person_id, txt_order_enc_id, txt_acttxtdisplay
+    FROM order_management_
+    WHERE txt_step LIKE 'ordered'
+) ordered ON o.person_id = ordered.person_id 
+         AND ordered.txt_order_enc_id = o.txt_order_enc_id 
+         AND ordered.txt_actTxtDisplay = o.txt_actTxtDisplay
+
+-- Scheduled
+LEFT JOIN (
+    SELECT person_id, txt_order_enc_id, txt_actTxtDisplay
+    FROM order_management_
+    WHERE txt_step LIKE 'scheduled'
+) scheduled ON o.person_id = scheduled.person_id 
+           AND scheduled.txt_order_enc_id = o.txt_order_enc_id 
+           AND scheduled.txt_actTxtDisplay = o.txt_actTxtDisplay
+
+-- Result Received
+LEFT JOIN (
+    SELECT person_id, txt_order_enc_id, txt_actTxtDisplay
+    FROM order_management_
+    WHERE txt_step LIKE 'result received'
+) received ON o.person_id = received.person_id 
+         AND received.txt_order_enc_id = o.txt_order_enc_id 
+         AND received.txt_actTxtDisplay = o.txt_actTxtDisplay
+
+-- Completed
+LEFT JOIN (
+    SELECT person_id, txt_order_enc_id, txt_actTxtDisplay
+    FROM order_management_
+    WHERE txt_step LIKE 'completed'
+) completed ON o.person_id = completed.person_id 
+          AND completed.txt_order_enc_id = o.txt_order_enc_id 
+          AND completed.txt_actTxtDisplay = o.txt_actTxtDisplay
+
+-- Obtained
+LEFT JOIN (
+    SELECT person_id, txt_order_enc_id, txt_actTxtDisplay
+    FROM order_management_
+    WHERE txt_step LIKE 'obtained'
+) obtained ON o.person_id = obtained.person_id 
+         AND obtained.txt_order_enc_id = o.txt_order_enc_id 
+         AND obtained.txt_actTxtDisplay = o.txt_actTxtDisplay
+
+-- Filter by Target Locations
+WHERE lm.location_id IN (
+    '9D971E61-2B5A-4504-9016-7FD863790EE2',
+    'A97BF74E-A822-468E-871E-197FD3C21314',
+    '27DDCEA5-9048-4DA8-A1CE-35323403BD4E',
+    'E6764687-D771-4420-9D04-92370E8BA245',
+    'D8CC9783-E862-49A2-A82F-8983BAEA23FC',
+    '58D75176-5578-4DCF-BDBE-AFFDCEB0D77E',
+    '00D2BE2A-7960-44CA-A7EF-24AFC233A761'
+)
+AND CAST(o.txt_ordereddate AS DATE) >= '2024-01-01' 
+AND o.txt_step IS NOT NULL
+
+-- Final Filter and Sort
+AND (
+    CASE 
+        WHEN o.txt_step LIKE 'Completed' THEN 'Yes'
+        WHEN (o.txt_step LIKE 'result received' OR o.txt_step LIKE 'obtained') 
+             AND completed.txt_order_enc_id IS NULL THEN 'Yes'
+        WHEN o.txt_step LIKE 'scheduled' 
+             AND completed.txt_order_enc_id IS NULL 
+             AND obtained.txt_order_enc_id IS NULL 
+             AND received.txt_order_enc_id IS NULL THEN 'Yes'
+        WHEN o.txt_step LIKE 'ordered' 
+             AND scheduled.txt_order_enc_id IS NULL 
+             AND completed.txt_order_enc_id IS NULL 
+             AND obtained.txt_order_enc_id IS NULL 
+             AND received.txt_order_enc_id IS NULL THEN 'Yes'
+        ELSE 'No'
+    END
+) = 'Yes'
+
+ORDER BY o.txt_order_enc_id;
