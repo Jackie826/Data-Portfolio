@@ -1,45 +1,9 @@
 Peer Review Dashboard – Randomized Encounter Selection Overview
-
-This SQL script powers the Peer Review Dashboard by selecting randomized encounters per provider on a quarterly basis. It is designed to streamline peer review processes and support automation by pulling 8 distinct, 
+======================================================================================================================
+This SQL script powers the Peer Review Dashboard by selecting randomized encounters per provider on a quarterly basis. 
+It is designed to streamline peer review processes and support automation by pulling 8 distinct, 
 randomly selected patient encounters per provider per quarter, excluding non-billable or incomplete visits.
-
-Key Logic
-Randomization: Each run of the script refreshes the patient list using NEWID() to generate a new randomized order of eligible visits.
-Quarterly Grouping: Encounters are grouped by year and quarter for time-based segmentation.
-Data Scope: The script only includes data from the previous 12 months, filtering by encounter timestamp.
-
-Visit Criteria: 
-Only completed and billable visits are included (billable_ind = 'Y').
-Non-encounters are excluded using timestamp and billing indicators.
-Only encounters with a valid provider (provider_id present) are included.
-
-Enhancements & Features:
-Random Sampling: Selects 8 visits per provider, per quarter across various service lines: Behavioral Health (BH), Mental Health (MH), Nutrition, and Primary Care
-
-Vaccination Indicator: 
-A Vaccine field flags visits related to vaccinations by checking diagnosis descriptions.
-
-Rolling Time Frame:
-Looks at encounters in the past year, segmented by quarter.
-
-Automation Ready:
-Built to support automated workflows (e.g. QI can pull/send lists directly to the providers).
-
-Expanded Data Fields:
-Output includes patient and visit details: Patient number, full name, DOB, encounter date/time, Billable status, visit type, specialty, provider name, location name
-
-Data Integrity:
-Only completed encounters are included, based on encounter ID and billing status.
-
-Exclusions:
-Case Management visits are excluded (no associated provider ID).
-
-======================================================
-Peer Review Dashboard: Randomized Encounter Selection
-Description:
-Selects 8 random, billable, completed patient visits 
-per provider per quarter from the past 12 months.
-======================================================
+=======================================================================================================================
 
 SELECT * 
 FROM (
