@@ -1,4 +1,4 @@
--- Open External Referral Orders
+-- Open External Referral Orders 
 
 SELECT DISTINCT
     pm.last_name AS [Provider Last Name],
