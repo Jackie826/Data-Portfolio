@@ -1,0 +1,332 @@
+===============SAMSHA OUTREACH ENROLLEE=============== 
+-- Purpose: Pull most recent screenings and relevant patient information for program enrollees, regardless of enrolled location.
+
+SELECT DISTINCT
+    pm.program_name AS Program,
+    p.first_name + ' ' + p.last_name AS Patient,
+    p.person_nbr AS Person_Nbr,
+    lm.location_name AS Location,
+    CAST(ppe.enrollment_date AS DATE) AS Enrolled_Date,
+    ppe.discharge_date AS Discharge_Date,
+    u.first_name + ' ' + u.last_name AS Enrolled_By,
+
+    -- Duplicate Enrollments
+    CASE WHEN ppe.total_enrollments > 1 THEN 'Yes' ELSE 'No' END AS Duplicate_Enrollments,
+    ppe.total_enrollments AS Total_Enrollments,
+
+    -- HIPAA Status
+    CASE 
+        WHEN p.person_id IN (
+            SELECT pt.person_id
+            FROM patient pt
+            WHERE pt.privacy_notice_code_id IN (
+                '918CD8B5-5ED1-4FFD-B690-A393B1E4943E',
+                'D77BCD13-56CF-4FD6-8888-24B6A874CEAB'
+            )
+        ) THEN 'Signed'
+        WHEN p.person_id IN (
+            SELECT pt.person_id
+            FROM patient pt
+            WHERE pt.privacy_notice_code_id = '53529E32-8CF8-4253-9252-CC638E5EF748'
+        ) THEN 'Refused to Sign'
+        ELSE 'Not Signed / Unable to Sign'
+    END AS HIPAA_Status,
+
+    -- HIPAA Date
+    CASE 
+        WHEN HP.[HIPPA Date] IS NULL AND pt.privacy_notice_received IS NULL THEN NULL
+        WHEN HP.[HIPPA Date] IS NOT NULL AND pt.privacy_notice_received IS NULL THEN HP.[HIPPA Date]
+        WHEN HP.[HIPPA Date] IS NULL AND pt.privacy_notice_received IS NOT NULL THEN pt.privacy_notice_received
+        WHEN HP.[HIPPA Date] >= pt.privacy_notice_received THEN HP.[HIPPA Date]
+        ELSE ''
+    END AS HIPAA_Date,
+
+    -- RHIO Consent
+    CASE 
+        WHEN rhio_latest.enc_id IS NULL AND (
+            m2.mstr_list_item_id IS NULL OR 
+            m2.mstr_list_item_id = '6DA03DD8-58EA-4C40-B960-4A91D9B6B36E'
+        ) THEN 'Not Compliant'
+        WHEN rhio_latest.chk_consent_2 = '1' AND m2.mstr_list_item_id = '8C5FA5A5-D51F-44A9-9DDE-CB02B5C388F4' THEN 'Compliant'
+        WHEN rhio_latest.chk_consent_1 = '1' AND m2.mstr_list_item_id = '572E5D79-ED18-4255-BA26-4DEF8A8E81EB' THEN 'Compliant'
+        WHEN rhio_latest.enc_id IS NOT NULL AND rhio_latest.chk_consent_1 IS NULL AND rhio_latest.chk_consent_2 IS NULL THEN 'Error'
+        ELSE 'Error'
+    END AS Rhio_Consent,
+
+    -- SDOH
+    SDOH.SDOH_Screen_Date,
+    SDOH.SDOH_Score,
+    SDOH.SDOH_Declined,
+
+    -- PHQ-9
+    CASE 
+        WHEN TRY_CAST(p9.[PHQ9 Score] AS INT) >= 3 THEN 'Yes'
+        WHEN TRY_CAST(p9.[PHQ9 Score] AS INT) IS NOT NULL THEN 'No'
+        ELSE NULL
+    END AS PHQ9_>=3,
+    p9.Issued_Date AS PHQ9_Date,
+    p9.[PHQ9 Score],
+
+    -- DAST
+    DAST.[DAST Date],
+    DAST.[DAST Score],
+ 
+    -- HIV
+    CASE WHEN EXISTS (
+        SELECT 1 FROM patient_diagnosis pd 
+        WHERE pd.person_id = p.person_id 
+          AND (
+            pd.diagnosis_code_id LIKE '%B20%' OR 
+            pd.diagnosis_code_id LIKE '%Z21%' OR 
+            pd.diagnosis_code_id LIKE '%B97.35%' OR 
+            pd.diagnosis_code_id LIKE '%042%' OR 
+            pd.diagnosis_code_id LIKE '%V08%'
+        )
+    ) THEN 'Yes' ELSE 'No' END AS HIV,
+
+    -- Hep C
+    CASE WHEN EXISTS (
+        SELECT 1 FROM patient_diagnosis pd 
+        WHERE pd.person_id = p.person_id 
+          AND (
+              pd.diagnosis_code_id LIKE 'B17.1%' OR 
+              pd.diagnosis_code_id LIKE 'B18.2%' OR 
+              pd.diagnosis_code_id LIKE 'B19.2%'
+          )
+        UNION
+        SELECT 1 FROM lab_results_obx lt
+        WHERE lt.person_id = p.person_id
+          AND lt.Loinc_code IN (
+              '13955-0', '16128-1', '22324-8', 'G0472', '20571-6', '11259-9',
+              '22318-0', '11011-4', '11012-2', '14212-5', '32286-7', '11260-7',
+              '13954-3', '11014-8', '13953-5', '32299-0', '32300-6', '11796-6',
+              '12501-7', '11263-1', '32294-1', '32295-8', '11013-0', '22322-2',
+              '20416-4', '11015-5', '13950-1', '13951-9', '11778-4', '11779-2',
+              '13956-8', '48398-2', '48798-3'
+          )
+    ) THEN 'Yes' ELSE 'No' END AS Hep_C,
+
+    -- Anxiety
+    CASE WHEN EXISTS (
+        SELECT 1 FROM patient_diagnosis pd 
+        WHERE pd.person_id = p.person_id 
+          AND (
+              pd.diagnosis_code_id LIKE 'F41%' OR
+              pd.diagnosis_code_id LIKE '300.0%'
+          )
+    ) THEN 'Yes' ELSE 'No' END AS Anxiety_Disorder,
+
+    -- Alcohol Use
+    CASE WHEN EXISTS (
+        SELECT 1 FROM patient_diagnosis pd 
+        WHERE pd.person_id = p.person_id 
+          AND (
+              pd.diagnosis_code_id LIKE 'F10%' OR
+              pd.diagnosis_code_id LIKE '303%' OR
+              pd.diagnosis_code_id LIKE '305.0%'
+          )
+    ) THEN 'Yes' ELSE 'No' END AS Alcohol_Use_Disorder,
+
+    -- PTSD
+    CASE WHEN EXISTS (
+        SELECT 1 FROM patient_diagnosis pd 
+        WHERE pd.person_id = p.person_id 
+          AND (
+              pd.diagnosis_code_id LIKE 'F43.1%' OR
+              pd.diagnosis_code_id LIKE '309.81%'
+          )
+    ) THEN 'Yes' ELSE 'No' END AS PTSD,
+
+    -- Depression
+    CASE WHEN EXISTS (
+        SELECT 1 FROM patient_diagnosis pd 
+        WHERE pd.person_id = p.person_id 
+          AND (
+              pd.diagnosis_code_id LIKE 'F33%' OR
+              pd.diagnosis_code_id LIKE 'F32%' OR
+              pd.diagnosis_code_id LIKE '296.2%' OR
+              pd.diagnosis_code_id LIKE '311%'
+          )
+    ) THEN 'Yes' ELSE 'No' END AS Depression,
+
+    -- Bipolar
+    CASE WHEN EXISTS (
+        SELECT 1 FROM patient_diagnosis pd 
+        WHERE pd.person_id = p.person_id 
+          AND (
+              pd.diagnosis_code_id LIKE 'F31%' OR
+              pd.diagnosis_code_id LIKE '296.4%' OR
+              pd.diagnosis_code_id LIKE '296.5%' OR
+              pd.diagnosis_code_id LIKE '296.6%' OR
+              pd.diagnosis_code_id LIKE '296.7%'
+          )
+    ) THEN 'Yes' ELSE 'No' END AS Bipolar_Disorder,
+
+    -- Schizophrenia
+    CASE WHEN EXISTS (
+        SELECT 1 FROM patient_diagnosis pd 
+        WHERE pd.person_id = p.person_id 
+          AND (
+              pd.diagnosis_code_id LIKE 'F20%' OR
+              pd.diagnosis_code_id LIKE '295%'
+          )
+    ) THEN 'Yes' ELSE 'No' END AS Schizophrenia
+
+-- Joins
+FROM person p
+
+-- Join patient to get HIPAA info
+LEFT JOIN patient pt ON pt.person_id = p.person_id
+
+-- Join program enrollment
+LEFT JOIN patient_program_enrollment ppe ON p.person_id = ppe.person_id
+
+-- Join program
+LEFT JOIN program_mstr pm ON ppe.program_id = pm.program_id
+
+-- Join user who enrolled
+LEFT JOIN [user] u ON ppe.created_user_id = u.user_id
+
+-- Join location
+LEFT JOIN location_mstr lm ON ppe.location_id = lm.location_id
+
+-- HIPAA Dates
+LEFT JOIN (
+    SELECT person_id, MAX(encounter_date) AS [HIPPA Date]
+    FROM encounter
+    WHERE enc_type_id = '645EA5E3-B1CE-4089-A5A2-DA19E2C3D6CF' -- HIPAA encounter
+    GROUP BY person_id
+) HP ON p.person_id = HP.person_id
+
+-- RHIO Consent
+LEFT JOIN (
+    SELECT person_id, enc_id, chk_consent_1, chk_consent_2
+    FROM (
+        SELECT *,
+               ROW_NUMBER() OVER (PARTITION BY person_id ORDER BY encounter_date DESC) AS rn
+        FROM encounter
+        WHERE enc_type_id = '2E2D48B5-4FA5-48C8-8B9C-B1F4C3AB8C21' -- RHIO encounter
+    ) rhio
+    WHERE rn = 1
+) rhio_latest ON rhio_latest.person_id = p.person_id
+
+-- RHIO Consent Types
+LEFT JOIN mstr_list_item m2 ON p.rhio_consent_type_id = m2.mstr_list_item_id
+
+-- PHQ-9 Screening
+LEFT JOIN (
+    SELECT person_id, 
+           MAX(issued_date) AS Issued_Date,
+           MAX(score) AS [PHQ9 Score]
+    FROM form_phq9
+    GROUP BY person_id
+) p9 ON p.person_id = p9.person_id
+
+-- DAST Screening
+LEFT JOIN (
+    SELECT person_id,
+           MAX(issued_date) AS [DAST Date],
+           MAX(score) AS [DAST Score]
+    FROM form_dast
+    GROUP BY person_id
+) DAST ON p.person_id = DAST.person_id
+
+-- SDOH Screening
+LEFT JOIN (
+    SELECT person_id,
+           MAX(issued_date) AS SDOH_Screen_Date,
+           MAX(total_score) AS SDOH_Score,
+           MAX(declined) AS SDOH_Declined
+    FROM form_sdoh
+    GROUP BY person_id
+) SDOH ON p.person_id = SDOH.person_id
+
+-- WHERE clause (filter to specific Outreach Program)
+WHERE pm.program_id = 'F112D6A2-F3A9-4294-BF06-F9F691B4DD95' -- Outreach Program ID
+
+-- Final sorting
+ORDER BY p.last_name, p.first_name
+
+
+===============SAMSHA OUTREACH DAST SCREENING======================
+-- Most recent DAST screening per person from both AC_BH_DAST_ and dast_ tables.
+-- The UNION ALL standardizes the score fields across both sources.
+
+SELECT
+    pm.program_name AS Program,
+    lm.location_name AS Location,
+    p.person_nbr AS Person_Nbr,
+    p.first_name + ' ' + p.last_name AS Patient_Name,
+    CAST(DAST.create_timestamp AS DATE) AS [DAST Date],
+    DAST.txt_total_score AS [DAST Score]
+
+FROM patient_program_enrollment ppe
+JOIN person p ON ppe.person_id = p.person_id
+LEFT JOIN program_mstr pm ON ppe.program_id = pm.program_id
+LEFT JOIN location_mstr lm ON ppe.location_id = lm.location_id
+
+-- Join to all DAST screenings from both relevant tables
+LEFT JOIN (
+    SELECT person_id, create_timestamp, txt_total_score
+    FROM AC_BH_DAST_
+    WHERE txt_total_score IS NOT NULL
+      AND create_timestamp >= '2022-01-01'
+
+    UNION ALL
+
+    SELECT person_id, create_timestamp, txt_score_total AS txt_total_score
+    FROM dast_
+    WHERE txt_score_total IS NOT NULL
+      AND create_timestamp >= '2022-01-01'
+) AS DAST ON p.person_id = DAST.person_id
+
+-- Apply filters to relevant program and location
+WHERE lm.location_name IN (
+    'Casa Maria Community Health Center',
+    'Claremont Family Health Center',
+    'Clay Ave Health Center',
+    'La Casa De Salud',
+    'Ramon Velez',
+    'Park Ave Health Center',
+    'J-CAP'
+)
+AND ppe.program_id = '64054E4A-976A-44D2-835C-D4527E35A187'
+AND p.first_name NOT LIKE '%test%'
+AND p.last_name NOT LIKE '%test%'
+AND ppe.delete_ind = 'N'
+
+===============SAMSHA OUTREACH PHQ9 SCREENING===============
+-- Retrieves PHQ-9 screenings where score > 3, limited to most recent encounters per person.
+
+SELECT
+    pm.program_name AS Program,
+    lm.location_name AS Location,
+    p.person_nbr AS Person_Nbr,
+    p.first_name + ' ' + p.last_name AS Patient_Name,
+    CAST(pe.create_timestamp AS DATE) AS Issued_Date,
+    p9.txt_total_score AS [PHQ9 Score]
+
+FROM depression_PHQ_9_ p9
+LEFT JOIN person p ON p9.person_id = p.person_id
+LEFT JOIN patient_encounter pe ON p9.enc_id = pe.enc_id
+LEFT JOIN patient_program_enrollment ppe ON pe.person_id = ppe.person_id
+LEFT JOIN program_mstr pm ON ppe.program_id = pm.program_id
+LEFT JOIN location_mstr lm ON ppe.location_id = lm.location_id
+
+-- Filters
+WHERE ISNUMERIC(p9.txt_total_score) = 1
+  AND TRY_CAST(p9.txt_total_score AS INT) > 3
+  AND pe.create_timestamp >= '2022-01-01'
+  AND lm.location_name IN (
+      'Casa Maria Community Health Center',
+      'Claremont Family Health Center',
+      'Clay Ave Health Center',
+      'La Casa De Salud',
+      'Ramon Velez',
+      'Park Ave Health Center'
+  )
+  AND ppe.program_id = '64054E4A-976A-44D2-835C-D4527E35A187'
+  AND p.first_name NOT LIKE '%test%'
+  AND p.last_name NOT LIKE '%test%'
+  AND ppe.delete_ind = 'N'
+
