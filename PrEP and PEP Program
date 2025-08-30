@@ -1,0 +1,230 @@
+-- PrEP Program Data Extraction
+-- Description: Patient-level data across services, screenings, and enrollments
+
+SELECT DISTINCT
+    pms.program_name AS Program,
+    p.first_name + ' ' + p.last_name AS [Patient Name],
+    p.Person_Nbr,
+    CAST(p.date_of_birth AS DATE) AS DOB,
+    p.Sex,
+    p.Ethnicity,
+    next.Next_appointment AS [Next Appt],
+ 
+    -- Referral Information
+    CASE 
+        WHEN air.opt_referral_source = 658 THEN 'Self'
+        WHEN air.opt_referral_source = 999 THEN 'Other'
+        ELSE 'Unknown'
+    END AS [Referral Source],
+    air.opt_referral_source,
+
+    CASE 
+        WHEN air.opt_type_referral_source = 1 THEN 'Internal'
+        WHEN air.opt_type_referral_source = 2 THEN 'External'
+        ELSE 'Unknown'
+    END AS [Referral Type],
+    air.opt_type_referral_source,
+
+    -- PrEP Services & Forms  
+    CASE 
+        WHEN de.person_id IS NULL THEN 'Yes'
+        ELSE 'No'
+    END AS Declined_PrEP,
+
+    CAST(pen.txt_date_effective AS DATE) AS Program_Enroll_Date,
+    pen.txt_staff_person AS [Program Staff Name],
+    pen.opt_type_referral AS Enroll_Form_Referral,
+
+    CAST(se.txt_actual_date AS DATE) AS PrEP_Service_Form_Date,
+    se.txt_staff2 AS [Prep Staff Name],
+
+    -- HIPAA Screening Status   
+    CASE 
+        WHEN hp.Issued_Date IS NULL AND pt.privacy_notice_received IS NULL THEN 'No'
+        ELSE 'Yes'
+    END AS [HIPPA Completed],
+
+    CASE 
+        WHEN hp.Issued_Date IS NULL AND pt.privacy_notice_received IS NULL THEN NULL
+        WHEN hp.Issued_Date >= pt.privacy_notice_received THEN hp.Issued_Date
+        ELSE pt.privacy_notice_received
+    END AS [HIPPA Final Date],
+
+    -- Program Enrollment  
+    CASE 
+        WHEN lcds_enrollee.person_id IS NOT NULL THEN 'Yes'
+        ELSE 'No'
+    END AS LCDS_PrEP_Enrollee,
+
+    CASE 
+        WHEN promesa_enrollee.person_id IS NOT NULL THEN 'Yes'
+        ELSE 'No'
+    END AS Promesa_PrEP_Enrollee,
+
+    -- Screening Results 
+    screen.Risk_Assessment,
+    screen.Last_Risk_Date,
+    screen.SDOH_Screening,
+    screen.Last_SDOH_Screen_Date,
+    screen.Gonorrhoeae_Screen,
+    screen.Chlamydia_Screen,
+    screen.Syphilis_Screen,
+    screen.Last_STI_Screening,
+
+    -- AIRS Short Form
+   CASE 
+        WHEN airs_screening.person_id IS NOT NULL THEN 'Yes'
+        ELSE 'No'
+    END AS Airs_Short_Form_Screen,
+  
+    -- PrEP
+    CASE 
+        WHEN se.chk_encounter3 = '1' THEN 'Yes'
+        ELSE 'No'
+    END AS [312_PrEP_Serv],
+    se.txt_encounter3_service1 AS PrEP_Serv_Detail,
+    se.txt_encounter3_service2 AS PrEP_Serv_Detail2,
+    se.txt_encounter3_service3 AS PrEP_Serv_Detail3,
+
+    -- PEP
+    CASE 
+        WHEN se.chk_encounter2 = '1' THEN 'Yes'
+        ELSE 'No'
+    END AS [311_Pep_Serv],
+    se.txt_encounter2_service1 AS Pep_Serv_Detail,
+    se.txt_encounter2_service2 AS Pep_Serv_Detail2,
+
+    -- Peer
+    CASE 
+        WHEN se.chk_encounter1 = '1' THEN 'Yes'
+        ELSE 'No'
+    END AS [139_Peer_Serv],
+    se.txt_encounter1_service1 AS Peer_Serv_Detail,
+    se.txt_encounter1_service2 AS Peer_Serv_Detail2,
+
+    -- Follow-up Letters 
+    CASE 
+        WHEN fup.person_id IS NOT NULL THEN 'Yes'
+        ELSE 'No'
+    END AS Follow_up_letter,
+
+    -- PrEP Status Change  
+    sc.opt_status_code AS Program_Status,
+    sc.txt_date_effective AS Effective_Date,
+    sc.txt_reason_case_closed AS Closed_Reason,
+    sc.death_state AS Death_State,
+    sc.txt_death_date AS Death_Date,
+
+    -- HIV & HCV Testing
+    CASE 
+        WHEN air.opt_hiv_status = 1 THEN 'Positive'
+        WHEN air.opt_hiv_status IN (3, 8, 11, 13) THEN 'Negative'
+        WHEN air.opt_hiv_status = 4 THEN 'Unknown'
+        ELSE ''
+    END AS [HIV Test Result],
+    CAST(air.txt_hiv_effective_date AS DATE) AS HIV_Test_Date,
+
+    CASE 
+        WHEN air.opt_hcv_status IN (15, 18) THEN 'Infected'
+        WHEN air.opt_hcv_status IN (9, 10) THEN 'Previously Infected'
+        WHEN air.opt_hcv_status = 12 THEN 'Not Infected'
+        WHEN air.opt_hcv_status = 13 THEN 'Unknown'
+        ELSE ''
+    END AS [HCV Test Result],
+    CAST(air.txt_hcv_effective_date AS DATE) AS HCV_Test_Date,
+
+    -- Medication History    
+    meds.Truvada,
+    meds.First_Issued_Truvada,
+    meds.Descovy,
+    meds.First_Issued_Descovy,
+    meds.Apretude,
+    meds.First_Issued_Apretude
+
+-- FROM / JOINS
+
+FROM patient_program_enrollment ppe
+
+-- Main Joins
+LEFT JOIN person p ON ppe.person_id = p.person_id
+LEFT JOIN program_mstr pms ON ppe.program_id = pms.program_id
+LEFT JOIN patient_encounter pe ON ppe.person_id = pe.person_id
+LEFT JOIN AC_PC_PrEP_AIRS_Intake_ air ON p.person_id = air.person_id
+LEFT JOIN AC_PC_PrEP_PregramEnroll_ pen ON p.person_id = pen.person_id
+LEFT JOIN AC_PC_PrEP_StatusChange_ sc ON p.person_id = sc.person_id
+LEFT JOIN AC_PC_PrEP_ServiceEnc_ se ON p.person_id = se.person_id
+LEFT JOIN AC_PC_PrEP_FollowUpLetter_ fup ON p.person_id = fup.person_id
+LEFT JOIN AC_PC_PrEP_DeclineService_ de ON p.person_id = de.person_id
+
+-- Next Appointment
+LEFT JOIN (
+    SELECT apt.person_id, MIN(CAST(apt.appt_date AS DATE)) AS Next_Appointment
+    FROM appointments apt
+    WHERE 
+        CAST(apt.appt_date AS DATE) >= GETDATE()
+        AND apt.location_id IN (
+            '9D971E61-2B5A-4504-9016-7FD863790EE2',
+            'A97BF74E-A822-468E-871E-197FD3C21314',
+            '27DDCEA5-9048-4DA8-A1CE-35323403BD4E',
+            'E6764687-D771-4420-9D04-92370E8BA245',
+            'D8CC9783-E862-49A2-A82F-8983BAEA23FC',
+            '58D75176-5578-4DCF-BDBE-AFFDCEB0D77E',
+            '00D2BE2A-7960-44CA-A7EF-24AFC233A761'
+        )
+    GROUP BY apt.person_id
+) next ON ppe.person_id = next.person_id
+
+-- Risk/SDOH/STI Screenings
+LEFT JOIN [YourScreeningJoinTable] screen ON ppe.person_id = screen.person_id
+
+-- HIPAA Issued/Received
+LEFT JOIN (
+    SELECT person_id, MIN(privacy_notice_issued) AS Issued_Date
+    FROM patient
+    WHERE CAST(privacy_notice_issued AS DATE) >= '2022-01-01'
+    GROUP BY person_id
+) hp ON ppe.person_id = hp.person_id
+
+LEFT JOIN (
+    SELECT person_id, MIN(CAST(privacy_notice_received AS DATE)) AS privacy_notice_received
+    FROM patient
+    WHERE CAST(privacy_notice_received AS DATE) >= '1999-01-01'
+    GROUP BY person_id
+) pt ON ppe.person_id = pt.person_id
+
+-- Enrollment Status (LCDS, Promesa)
+LEFT JOIN (
+    SELECT DISTINCT person_id FROM patient_program_enrollment
+    WHERE 
+        program_id LIKE '%559690F6-2BE9-4F30-9249-65A9669C3013%'
+        AND delete_ind = 'N'
+        AND (discharge_date IS NULL OR discharge_date IN ('', ' ', '  '))
+) lcds_enrollee ON ppe.person_id = lcds_enrollee.person_id
+
+LEFT JOIN (
+    SELECT DISTINCT person_id FROM patient_program_enrollment
+    WHERE 
+        program_id LIKE '%6ADCB455-6EDC-4FCA-A37D-6635271D5287%'
+        AND delete_ind = 'N'
+        AND (discharge_date IS NULL OR discharge_date IN ('', ' ', '  '))
+) promesa_enrollee ON ppe.person_id = promesa_enrollee.person_id
+
+-- AIRS Short Form
+LEFT JOIN (
+    SELECT DISTINCT person_id
+    FROM AC_PC_PrEP_AIRS_Intake_
+    WHERE create_timestamp IS NOT NULL
+) airs_screening ON ppe.person_id = airs_screening.person_id
+
+-- Medication History Join (Truvada, Descovy, Apretude)
+LEFT JOIN [YourMedicationJoinTable] meds ON ppe.person_id = meds.person_id
+
+-- Filters
+
+WHERE 
+    ppe.program_id IN (
+        '%6ADCB455-6EDC-4FCA-A37D-6635271D5287%',
+        '%559690F6-2BE9-4F30-9249-65A9669C3013%'
+    )
+    AND (p.first_name NOT LIKE 'test' OR p.last_name NOT LIKE 'test')
+
