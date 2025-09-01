@@ -1,6 +1,3 @@
-===============SAMSHA OUTREACH ENROLLEE=============== 
--- Purpose: Pull most recent screenings and relevant patient information for program enrollees, regardless of enrolled location.
-
 SELECT DISTINCT
     pm.program_name AS Program,
     p.first_name + ' ' + p.last_name AS Patient,
