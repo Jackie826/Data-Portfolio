@@ -1,6 +1,3 @@
--- PrEP Program Data Extraction
--- Description: Patient-level data across services, screenings, and enrollments
-
 SELECT DISTINCT
     pms.program_name AS Program,
     p.first_name + ' ' + p.last_name AS [Patient Name],
