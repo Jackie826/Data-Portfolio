@@ -1,10 +1,3 @@
-Peer Review Dashboard – Randomized Encounter Selection Overview
-======================================================================================================================
-This SQL script powers the Peer Review Dashboard by selecting randomized encounters per provider on a quarterly basis. 
-It is designed to streamline peer review processes and support automation by pulling 8 distinct, 
-randomly selected patient encounters per provider per quarter, excluding non-billable or incomplete visits.
-=======================================================================================================================
-
 SELECT * 
 FROM (
     SELECT        
