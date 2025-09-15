@@ -1,0 +1,53 @@
+#Title: Patient Counts by Marketing Plan and Age Group
+
+#Aim: To visualize how patient enrollment is distributed across marketing plans by age group, highlighting demographic trends and identifying which plans attract specific age ranges.
+
+#Interpretation:
+#Each tile represents the number of patients within a 5-year age bin for a given marketing plan.
+#Darker blue tiles indicate higher patient counts, while lighter tiles show lower counts.
+#Labels display exact patient numbers, making comparisons straightforward.
+#Observations may reveal which marketing plans attract younger vs. older patients, helping guide targeted outreach or campaign adjustments.
+
+library(dplyr)
+library(ggplot2)
+# Create age groups (5-year bins)
+dataset <- dataset %>%
+  mutate(
+    AgeGroup = cut(
+      Age,
+      breaks = seq(floor(min(Age, na.rm = TRUE)),
+                   ceiling(max(Age, na.rm = TRUE)),
+                   by = 5),
+      include.lowest = TRUE,
+      right = FALSE,
+      labels = paste(
+        seq(floor(min(Age, na.rm = TRUE)),
+            ceiling(max(Age, na.rm = TRUE)) - 5,
+            by = 5),
+        seq(floor(min(Age, na.rm = TRUE)) + 4,
+            ceiling(max(Age, na.rm = TRUE)) - 1,
+            by = 5),
+        sep = "-"
+      )
+    )
+  )
+# Ensure factors
+dataset$`Marketing Plans` <- as.factor(dataset$`Marketing Plans`)
+dataset$AgeGroup <- as.factor(dataset$AgeGroup)
+# Summarize counts
+heatmap_data <- dataset %>%
+  group_by(`Marketing Plans`, AgeGroup) %>%
+  summarise(n = n(), .groups = "drop")
+# Heatmap plot
+ggplot(heatmap_data, aes(x = `Marketing Plans`, y = AgeGroup, fill = n)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = n), color = "black", fontface = "bold", size = 4.5) +
+  scale_fill_gradient(low = "orange", high = "medium blue") +
+  labs(#title = "Patient Counts by Marketing Plan and Age Group",
+       x = "Marketing Plan",
+       y = "Age Group",
+       fill = "Count") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 18, face = "bold"),
+        axis.title = element_text(size = 13, face = "bold"),
+        axis.text = element_text(size = 11, face = "bold"))
