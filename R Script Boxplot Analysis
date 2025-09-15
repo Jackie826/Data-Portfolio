@@ -1,0 +1,73 @@
+#R Script Boxplot Analysis in Power BI - Age Distribution Across Marketing Plans
+
+#Summary: This analysis explores the distribution of patient ages segmented by various marketing plans. Using boxplots, we examine central tendencies, variability, and outliers to identify patterns in how different plans attract patients across age groups. This visualization offers insights into demographic targeting and potential misalignment in campaign strategies.
+
+#Key Features
+#Clean boxplot visual of age distribution by marketing plan
+#Professional color scheme with clear median labels
+#Highlights variability and outliers for each plan
+#Minimalist design for clear, quick interpretation
+
+library(ggplot2) 
+library(dplyr)
+library(RColorBrewer)
+# Ensure 'Marketing Plans' is a factor
+dataset$`Marketing Plans` <- factor(dataset$`Marketing Plans`)
+# Generate professional color palette
+num_plans <- length(levels(dataset$`Marketing Plans`))
+base_palette <- brewer.pal(8, "Set2")
+palette_colors <- colorRampPalette(base_palette)(num_plans)
+names(palette_colors) <- levels(dataset$`Marketing Plans`)
+# Summarize stats: median, Q1, Q3, IQR
+iqr_values <- dataset %>%
+  group_by(`Marketing Plans`) %>%
+  summarise(
+    Q1 = quantile(Age, 0.25),
+    Q3 = quantile(Age, 0.75),
+    Median = median(Age),
+    IQR = IQR(Age)
+  )
+# Count patients per plan
+counts <- dataset %>%
+  group_by(`Marketing Plans`) %>%
+  summarise(n = n())
+ggplot(dataset, aes(x = `Marketing Plans`, y = Age, fill = `Marketing Plans`)) +
+  geom_boxplot() +
+  # Median labels
+  stat_summary(
+    fun = median, geom = "text", aes(label = round(..y.., 1)),
+    color = "black", vjust = -0.5, size = 5, fontface = "bold"
+  ) +
+  # IQR labels
+  geom_text(
+    data = iqr_values,
+    aes(x = `Marketing Plans`, y = Q3 + 3, 
+        label = paste0("IQR=", IQR)),
+    inherit.aes = FALSE,
+    size = 4.5, fontface = "italic", color = "darkred" 
+  ) +
+  # n labels (patient count)
+  geom_text(
+    data = counts,
+    aes(x = `Marketing Plans`, y = max(dataset$Age) + 5, 
+        label = paste0("n=", n)),
+    inherit.aes = FALSE,
+    size = 4, fontface = "bold", color = "darkgreen"
+  ) +
+  scale_fill_manual(values = palette_colors) +
+  labs(
+    x = "Marketing Plan",
+    y = "Patient Age"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 18, face = "bold", color = "#2c3e50"),
+    axis.title.x = element_text(size = 13, face = "bold"),
+    axis.title.y = element_text(size = 13, face = "bold"),
+    axis.text.x = element_text(angle = 0, hjust = 0.5, face = "bold", size = 11),
+    axis.text.y = element_text(face = "bold", size = 11),
+    legend.position = "none",
+    panel.grid.major.y = element_line(color = "gray80"),
+    panel.grid.minor.y = element_blank()
+  )
+
