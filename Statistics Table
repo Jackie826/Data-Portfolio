@@ -1,0 +1,39 @@
+#Age Distribution Across Marketing Plans
+
+#Supporting Stats Table – Summarizes mean, median, SD, and range for each plan in a clean, easy-to-read format.
+
+#Aim: To analyze how patient ages vary across different marketing plans, using distribution plots, regression modeling, and supporting summary statistics to identify demographic trends and potential campaign targeting insights.
+
+library(dplyr)
+library(gridExtra)
+library(grid)
+# Supporting stats table
+stats_table <- dataset %>%
+  group_by(`Marketing Plans`) %>%
+  summarise(
+    n = n(),
+    Mean_Age = round(mean(Age, na.rm = TRUE), 1),
+    Median_Age = median(Age, na.rm = TRUE),
+    SD_Age = round(sd(Age, na.rm = TRUE), 1),
+    Min_Age = min(Age, na.rm = TRUE),
+    Max_Age = max(Age, na.rm = TRUE)
+  )
+# Make the table grob larger
+table_grob <- tableGrob(
+  stats_table,
+  rows = NULL,
+  theme = ttheme_default(
+    core = list(
+      fg_params = list(cex = 1.2), # bump text size
+      bg_params = list(fill = c("grey95", "white")) # zebra stripes
+    ),
+    colhead = list(fg_params = list(cex = 1.3, fontface = "bold"))
+  )
+)
+# Draw table bigger on canvas
+grid.newpage()
+pushViewport(viewport(width = 0.95, height = 0.95))  # scale to nearly full frame
+grid.draw(table_grob)
+grid.text("Supporting Stats Table: Patient Age by Marketing Plan",
+          y = unit(1, "npc") - unit(0.5, "lines"),
+          gp = gpar(fontsize = 16, fontface = "bold"))
