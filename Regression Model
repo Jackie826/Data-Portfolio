@@ -1,0 +1,31 @@
+#R Regression Model Analysis in Power BI - Age vs. Marketing Plan (encoded numerically)
+
+#This regression analysis explores the relationship between Patient Age and Marketing Plan enrollment by converting categorical plan types into numeric values for modeling. The regression line slopes upward, indicating a positive association: patients enrolled in higher-coded marketing plans tend to be older on average.
+
+#The inclusion of a 95% confidence interval around the regression line highlights the certainty of the slope estimate, with a relatively narrow interval reflecting a reliable positive trend.
+
+#This visualization demonstrates how regression can be applied to categorical-to-numeric data, making it a practical example of turning qualitative variables into quantitative insights for analysis.
+
+#Findings: The regression analysis suggests that patients aged 40 and older are more likely to participate in higher-coded marketing plans, indicating a positive age-related trend. Adding the marketing plan categories along the x-axis with patient counts would provide further context by showing not only the age distribution but also which marketing plans are most widely adopted.
+
+library(dplyr)
+library(ggplot2)
+dataset <- dataset %>% mutate(`Marketing Plans` = factor(`Marketing Plans`))
+plan_counts <- dataset %>%
+  group_by(`Marketing Plans`) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  mutate(MarketingPlanNum = as.numeric(`Marketing Plans`))
+dataset <- dataset %>%
+  mutate(MarketingPlanNum = as.numeric(`Marketing Plans`))
+ggplot(dataset, aes(x = MarketingPlanNum, y = Age)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = TRUE, color = "blue") +
+  scale_x_continuous(breaks = 1:length(levels(dataset$`Marketing Plans`)),
+                     labels = levels(dataset$`Marketing Plans`)) +
+  geom_text(data = plan_counts,
+            aes(x = MarketingPlanNum, y = max(dataset$Age) + 5, label = paste0("n=", n)),
+            inherit.aes = FALSE, fontface = "bold", color = "blue") +
+  labs(#title = "Shows a positive relationship between age and marketing plan enrollment",
+       x = "Marketing Plans", y = "Patient Age") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 18, face = "bold"))
